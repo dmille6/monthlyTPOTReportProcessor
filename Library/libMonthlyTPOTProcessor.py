@@ -27,6 +27,10 @@ class tpotLogProcessor:
         print("---=============================---")
 
     def processFiles(self, cpuCount):
+        multi_lock = multiprocessing.Lock()
+        multi_manager = Manager()
+        shared_dict=multi_manager.dict()
+
         if cpuCount !=0:
             self.cpu_no = cpuCount
         else:
@@ -35,7 +39,7 @@ class tpotLogProcessor:
         print ("Processing with ", self.cpu_no, " CPU cores" )
         full_startTime=datetime.now()
         for file in self.inputFilelist:
-            proc = Process(target=self.multiReadFiles, args=(file,))
+            proc = Process(target=self.multiReadFiles, args=(file,shared_dict))
             self.processes.append(proc)
             proc.start()
 
@@ -44,7 +48,17 @@ class tpotLogProcessor:
             item.join()
 
         print ("Total Time Taken:", datetime.now()-full_startTime)
-        #print (self.dataDict)
+        regDict={}
+        regDict=shared_dict.copy()
+        self.saveDataCSV(regDict)
+
+
+    def saveDataCSV(self, data):
+        fileWriter=open("output.csv", "w")
+        for item in data:
+            strToWrite=item + "," + str(data[item]) + "\n"
+            fileWriter.write(strToWrite)
+        fileWriter.close()
 
     def getFileList(self):
         print ("get file list")
@@ -58,8 +72,8 @@ class tpotLogProcessor:
                 else:
                     print("Not Important:", strFilename)
 
-    def multiReadFiles(self, strFileName):
-        print ("  Processing:", strFileName)
+    def multiReadFiles(self, strFileName, dataDict):
+        #print ("  Processing:", strFileName)
         file_startTime = datetime.now()
         count=0
         #print("ReadFile")
@@ -71,19 +85,21 @@ class tpotLogProcessor:
                     #print (strFileName)
                     #jsonDict=json.loads(line) # python internal json parser
                     jsonDict = orjson.loads(line)  # opensource json parsing library, MUCH faster, like 60% faster than pythons json library
-                    self.saveDataToDict(jsonDict)
-            print ("       ", strFileName, " has #", count, " lines")
+                    self.saveDataToDict(jsonDict, dataDict, strFileName)
+            #print ("       ", strFileName, " has #", count, " lines")
             print("     Time taken to process:", strFileName, " : ", datetime.now() - file_startTime)
         except:
             e = sys.exc_info()[0]
             #print("ERROR:", e, line)
             errorString = "LoadFile ERROR: " + line + " : " + str(e) + "\n"
 
-    def saveDataToDict(self, item):
-        if item['src_ip'] in self.dataDict:
-            self.dataDict[item['src_ip']]+=1
+    def saveDataToDict(self, item, dataDict, file):
+        if item['src_ip'] in dataDict:
+            #print ("file:", file, " Increment:", item['src_ip'], ":", dataDict[item['src_ip']] )
+            dataDict[item['src_ip']]+=1
         else:
-            self.dataDict[item['src_ip']]=1
+            dataDict[item['src_ip']]=1
+            #print("file:", file, " New:", item['src_ip'])
 
 
 # not used **************
