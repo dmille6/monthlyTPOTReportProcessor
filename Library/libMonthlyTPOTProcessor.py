@@ -84,10 +84,10 @@ class tpotLogProcessor:
         for logCat in fileDict:
             #print ("    Log Type:", logCat, " : ", len(fileDict[logCat]))
             if logCat != "Suricata":
-                self.mongoInsert(fileDict[logCat], logCat)
+                self.mongoInsert(fileDict[logCat], logCat, strFileName)
         print ("Processing Complete for:", strFileName)
 
-    def mongoInsert(self, dataBlock, logType):
+    def mongoInsert(self, dataBlock, logType, strFilename):
         currentDate = datetime.now()
         monthName= currentDate.strftime('%B')
         year=currentDate.year
@@ -95,10 +95,20 @@ class tpotLogProcessor:
 
         #print (strCatalogName)
 
-        client = MongoClient(self.MongoServer)
-        db = client['tpot20']
-        collection_name=strCatalogName
-        HP_collection = db[collection_name]
-        # print ("   DataBlock Contains:", len(dataBlock))
-        result=HP_collection.insert_many(dataBlock, ordered=False,bypass_document_validation=True)
+        try:
+            client = MongoClient(self.MongoServer)
+            db = client['tpot20']
+            collection_name=strCatalogName
+            HP_collection = db[collection_name]
+            # print ("   DataBlock Contains:", len(dataBlock))
+            result=HP_collection.insert_many(dataBlock, ordered=False,bypass_document_validation=True)
+        except:
+            print ("PRINT ERROR SUBMITTING:",strCatalogName,":", strFilename )
+
+    def validateJSON(jsonData):
+        try:
+            json.loads(jsonData)
+        except ValueError as err:
+            return False
+        return True
 

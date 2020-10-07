@@ -69,19 +69,5 @@ for hpType in fileDict:
         parsedDict.pop('raw_mtu', None)
         return parsedDict
 
-    def mongoInsert(self, dataBlock):
-        logID=0
-        count=0
-        client = MongoClient(self.MongoServer)
-        db = client['tpot20']
-        collection_name="logs"
-        HP_collection = db[collection_name]
-        print ("   DataBlock Contains:", len(dataBlock))
-        result=HP_collection.insert_many(dataBlock, ordered=False,bypass_document_validation=True)
 
-    def validateJSON(jsonData):
-        try:
-            json.loads(jsonData)
-        except ValueError as err:
-            return False
-        return True
+
