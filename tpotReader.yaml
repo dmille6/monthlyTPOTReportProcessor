@@ -1,2 +1,3 @@
 logFolder: ./Logs
 logFileExtension: .log
+mongoServer: 'mongodb://192.168.3.156:27017'

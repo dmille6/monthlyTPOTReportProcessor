@@ -1,11 +1,12 @@
 import multiprocessing
 from multiprocessing import Process, Manager, Pool
-from memory_profiler import profile
 from datetime import datetime
 import orjson #opensource json parsing library, much faster
-from pprint import pprint
 import os, sys, json
+from pymongo import MongoClient
+import pymongo
 from tqdm import tqdm
+
 
 class tpotLogProcessor:
     def __init__(self, config):
@@ -14,23 +15,22 @@ class tpotLogProcessor:
         manager = Manager()
         self.LogDirectory=config['logFolder']
         self.LogExtension=config['logFileExtension']
+        self.MongoServer=config['mongoServer']
         self.dataDict=manager.dict()
+        self.allDataList=manager.list()
         self.inputFilelist = []
         self.jsonList=manager.list()
         self.cpu_no=multiprocessing.cpu_count()
         self.processes = []
         self.getFileList()
-        print (self.inputFilelist)
 
         print ("---=============================---")
         print ("Beginning to Process:")
         print("---=============================---")
 
     def processFiles(self, cpuCount):
-        multi_lock = multiprocessing.Lock()
         multi_manager = Manager()
         shared_dict=multi_manager.dict()
-
         if cpuCount !=0:
             self.cpu_no = cpuCount
         else:
@@ -39,7 +39,7 @@ class tpotLogProcessor:
         print ("Processing with ", self.cpu_no, " CPU cores" )
         full_startTime=datetime.now()
         for file in self.inputFilelist:
-            proc = Process(target=self.multiReadFiles, args=(file,shared_dict))
+            proc = Process(target=self.multiReadFiles, args=(file,shared_dict,))
             self.processes.append(proc)
             proc.start()
 
@@ -48,17 +48,6 @@ class tpotLogProcessor:
             item.join()
 
         print ("Total Time Taken:", datetime.now()-full_startTime)
-        regDict={}
-        regDict=shared_dict.copy()
-        self.saveDataCSV(regDict)
-
-
-    def saveDataCSV(self, data):
-        fileWriter=open("output.csv", "w")
-        for item in data:
-            strToWrite=item + "," + str(data[item]) + "\n"
-            fileWriter.write(strToWrite)
-        fileWriter.close()
 
     def getFileList(self):
         print ("get file list")
@@ -73,81 +62,43 @@ class tpotLogProcessor:
                     print("Not Important:", strFilename)
 
     def multiReadFiles(self, strFileName, dataDict):
-        #print ("  Processing:", strFileName)
-        file_startTime = datetime.now()
+        fileDict={}
         count=0
-        #print("ReadFile")
-        #print("Multi     - Reading ", strFileName)
-        try:
-            with open(strFileName, "r") as filehandler:
-                for line in filehandler:
-                    count+=1
-                    #print (strFileName)
-                    #jsonDict=json.loads(line) # python internal json parser
-                    jsonDict = orjson.loads(line)  # opensource json parsing library, MUCH faster, like 60% faster than pythons json library
-                    self.saveDataToDict(jsonDict, dataDict, strFileName)
-            #print ("       ", strFileName, " has #", count, " lines")
-            print("     Time taken to process:", strFileName, " : ", datetime.now() - file_startTime)
-        except:
-            e = sys.exc_info()[0]
-            #print("ERROR:", e, line)
-            errorString = "LoadFile ERROR: " + line + " : " + str(e) + "\n"
+        file_startTime = datetime.now()
+        strID=strFileName
+        strID=strID.replace("./Logs/","")
 
-    def saveDataToDict(self, item, dataDict, file):
-        if item['src_ip'] in dataDict:
-            #print ("file:", file, " Increment:", item['src_ip'], ":", dataDict[item['src_ip']] )
-            dataDict[item['src_ip']]+=1
-        else:
-            dataDict[item['src_ip']]=1
-            #print("file:", file, " New:", item['src_ip'])
-
-
-# not used **************
-    def readFile(self, strFileName, dataDict):
-        print ("ReadFile")
-        print("     - Reading ", strFileName)
+        print("Processing:", strFileName)
         with open(strFileName, "r") as filehandler:
             for line in filehandler:
-                try:
-                    if line[0] != "#":  # skip lines that are a comment
-                        line = line.replace("\n", "")
-                        #jsonDict=json.loads(line) # python internal json parser
-                        jsonDict=orjson.loads(line) # opensource json parsing library, MUCH faster, like 60% faster
-                        if "src_ip" in jsonDict:
-                            if "type" in jsonDict:
-                                if "P0f" in jsonDict['type'] or "Fatt" in jsonDict['type']:
-                                    test=1
-                                elif "Cowrie" in jsonDict['type']:
-                                    test=1
-                                elif "Suricata" in jsonDict['type']:
-                                    test=1
-                                elif "Rdpy" in jsonDict['type']:
-                                    test = 1
-                                elif "Glutton" in jsonDict['type']:
-                                    test = 1
-                                elif "Dionaea" in jsonDict['type']:
-                                    test = 1
-                                elif "Heralding" in jsonDict['type']:
-                                    test = 1
-                                elif "Adbhoney" in jsonDict['type']:
-                                    test = 1
-                                elif "CitrixHoneypot" in jsonDict['type']:
-                                    test = 1
-                                elif "Tanner" in jsonDict['type']:
-                                    test = 1
-                                elif "Mailoney" in jsonDict['type']:
-                                    test = 1
-                                elif "ConPot" in jsonDict['type']:
-                                    test = 1
-                                elif "Honeypy" in jsonDict['type']:
-                                    test = 1
-                                elif "Ciscoasa" in jsonDict['type']:
-                                    test = 1
-                                elif "ssh-rsa" in jsonDict['type']:
-                                    test = 1
-                                else:
-                                    test=1
-                except:
-                    e = sys.exc_info()[0]
-                    #print("ERROR:", e, line)
-                    errorString = "LoadFile ERROR: " + line + " : " + str(e) + "\n"
+                # jsonDict=json.loads(line) # python internal json parser
+                jsonDict = orjson.loads(line)  # opensource json parsing library, MUCH faster, like 60% faster than pythons json library
+                logType=jsonDict['type']
+                if logType in fileDict.keys():
+                    fileDict[logType].append(jsonDict)
+                else: # new kind of logtype
+                    fileDict[logType]=[]
+                    fileDict[logType].append(jsonDict)
+
+        #print ("File:", strFileName, "has these log types:", fileDict.keys())
+        for logCat in fileDict:
+            #print ("    Log Type:", logCat, " : ", len(fileDict[logCat]))
+            if logCat != "Suricata":
+                self.mongoInsert(fileDict[logCat], logCat)
+        print ("Processing Complete for:", strFileName)
+
+    def mongoInsert(self, dataBlock, logType):
+        currentDate = datetime.now()
+        monthName= currentDate.strftime('%B')
+        year=currentDate.year
+        strCatalogName="TPOT20-"+ logType + "-"+monthName+str(year)
+
+        #print (strCatalogName)
+
+        client = MongoClient(self.MongoServer)
+        db = client['tpot20']
+        collection_name=strCatalogName
+        HP_collection = db[collection_name]
+        # print ("   DataBlock Contains:", len(dataBlock))
+        result=HP_collection.insert_many(dataBlock, ordered=False,bypass_document_validation=True)
+
